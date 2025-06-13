@@ -172,11 +172,12 @@ debugger.debug_action(:problematic_action, user: current_user)
 
 ## Documentation
 
-- **[Complete Documentation](doc/index.html)** - Comprehensive guides and API reference
-- **[Quick Start Guide](doc/examples/basic_workflow.html)** - Get started in 10 minutes  
-- **[Example Workflows](examples/)** - Production-ready workflow examples
-- **[Performance Guide](doc/performance.html)** - Monitoring and optimization
-- **[Troubleshooting](doc/troubleshooting.html)** - Common issues and solutions
+- **[Complete Documentation](doc/index.md)** - Comprehensive guides and API reference
+- **[Quick Start Guide](doc/examples/basic_workflow.md)** - Get started in 10 minutes  
+- **[Example Workflows Guide](doc/examples/example_workflows.md)** - Production-ready workflow examples
+- **[Avo Integration Guide](doc/avo_integration.md)** - Complete Avo admin integration
+- **[Performance Guide](doc/performance.md)** - Monitoring and optimization
+- **[Troubleshooting](doc/troubleshooting.md)** - Common issues and solutions
 - **[API Reference](doc/api/)** - Complete method documentation
 
 Generate documentation locally:
@@ -230,7 +231,7 @@ This gem is available as open source under the terms of the [MIT License](LICENS
 
 ## Support
 
-- **Documentation**: [Full documentation site](doc/index.html)
+- **Documentation**: [Full documentation site](doc/index.md)
 - **Examples**: See the [`examples/`](examples/) directory
 - **Issues**: [GitHub Issues](https://github.com/avo-hq/avo-workflows/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/avo-hq/avo-workflows/discussions)
