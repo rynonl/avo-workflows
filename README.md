@@ -1,35 +1,236 @@
-# Avo::Workflows
+# Avo Workflows
 
-TODO: Delete this and the text below, and describe your gem
+[![Gem Version](https://badge.fury.io/rb/avo-workflows.svg)](https://badge.fury.io/rb/avo-workflows)
+[![Build Status](https://github.com/avo-hq/avo-workflows/workflows/CI/badge.svg)](https://github.com/avo-hq/avo-workflows/actions)
 
-Welcome to your new gem! In this directory, you'll find the files you need to be able to package up your Ruby library into a gem. Put your Ruby code in the file `lib/avo/workflows`. To experiment with that code, run `bin/console` for an interactive prompt.
+A powerful workflow engine that integrates seamlessly with Avo admin interface and Rails applications. Build sophisticated, multi-step workflows with conditional logic, validations, and comprehensive monitoring.
 
-## Installation
+## Features
 
-TODO: Replace `UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG` with your gem name right after releasing it to RubyGems.org. Please do not do it earlier due to security reasons. Alternatively, replace this section with instructions to install your gem from git if you don't plan to release to RubyGems.org.
+- 🚀 **Declarative Workflow Definition** - Define workflows using an intuitive Ruby DSL
+- 🔄 **State Management** - Robust step-based state transitions with validation
+- 🎛️ **Avo Integration** - Native integration with Avo admin interface (fields, panels, actions)
+- 👥 **Multi-User Support** - Assign workflows to users and track assignments
+- 📊 **Performance Monitoring** - Built-in performance tracking and optimization
+- 🔍 **Debugging Tools** - Comprehensive debugging and recovery mechanisms
+- 🏗️ **Polymorphic Support** - Works with any Rails model via polymorphic associations
+- ⚡ **Production Ready** - Enterprise-grade error handling and recovery
 
-Install the gem and add to the application's Gemfile by executing:
+## Quick Start
 
-```bash
-bundle add UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG
+### Installation
+
+Add to your Gemfile:
+
+```ruby
+gem 'avo-workflows'
 ```
 
-If bundler is not being used to manage dependencies, install the gem by executing:
+Run the installer:
 
 ```bash
-gem install UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG
+bundle install
+rails generate avo_workflows:install
+rails db:migrate
 ```
 
-## Usage
+### Basic Usage
 
-TODO: Write usage instructions here
+**1. Define a Workflow**
+
+```ruby
+# app/avo/workflows/document_approval_workflow.rb
+class DocumentApprovalWorkflow < Avo::Workflows::Base
+  step :draft do
+    action :submit_for_review, to: :under_review
+  end
+  
+  step :under_review do
+    action :approve, to: :approved do
+      condition { |execution| execution.context[:reviewer_role] == 'manager' }
+    end
+    action :reject, to: :draft
+  end
+  
+  step :approved
+end
+```
+
+**2. Add to Your Model**
+
+```ruby
+# app/models/document.rb
+class Document < ApplicationRecord
+  include Avo::Workflows::WorkflowMethods
+  
+  has_many_attached :files
+  validates :title, presence: true
+end
+```
+
+**3. Start and Execute Workflows**
+
+```ruby
+# Create and start workflow
+document = Document.create!(title: "Important Document")
+workflow = document.start_workflow!(DocumentApprovalWorkflow, user: current_user)
+
+# Check available actions
+workflow.available_actions
+# => [:submit_for_review]
+
+# Perform actions
+workflow.perform_action(:submit_for_review, user: current_user)
+workflow.perform_action(:approve, user: manager, context: { reviewer_role: 'manager' })
+
+# Check workflow state
+workflow.current_step
+# => "approved"
+```
+
+**4. Avo Integration**
+
+```ruby
+# app/avo/resources/document_resource.rb
+class DocumentResource < Avo::BaseResource
+  include Avo::Workflows::ResourceMethods
+  
+  field :title, as: :text
+  field :workflow_status, as: :workflow_progress
+  field :workflow_actions, as: :workflow_actions
+  
+  panel :workflow_details, as: :workflow_step_panel
+  panel :workflow_history, as: :workflow_history_panel
+end
+```
+
+## Example Workflows
+
+### Employee Onboarding
+Complete multi-step onboarding with document collection, IT setup, and training tracking.
+
+```ruby
+workflow = employee.start_onboarding!(assigned_to: hr_user)
+workflow.perform_action(:collect_documents, user: hr_user)
+workflow.perform_action(:setup_it_account, user: it_user)
+# ... full example in examples/workflows/employee_onboarding_workflow.rb
+```
+
+### Blog Post Publishing
+Editorial workflow with drafts, reviews, and publishing steps.
+
+```ruby
+workflow = blog_post.start_workflow!(BlogPostWorkflow, user: author)
+workflow.perform_action(:submit_for_review, user: author)
+workflow.perform_action(:publish, user: editor)
+# ... full example in examples/workflows/blog_post_workflow.rb
+```
+
+### Document Approval
+Multi-level approval workflow with role-based conditions.
+
+```ruby
+workflow = document.start_approval!(assigned_to: manager)
+workflow.perform_action(:submit_for_review, user: author)
+workflow.perform_action(:approve, user: manager)
+# ... full example in examples/workflows/document_approval_workflow.rb
+```
+
+## Advanced Features
+
+### Performance Monitoring
+
+```ruby
+# Monitor workflow performance
+monitor = Avo::Workflows::Performance::Monitor.new(workflow_execution)
+report = monitor.performance_report
+
+# Benchmark different approaches
+benchmark = Avo::Workflows::Performance::Benchmark.new
+results = benchmark.load_test(WorkflowClass, concurrent_executions: 10)
+```
+
+### Error Handling & Recovery
+
+```ruby
+# Automatic recovery points
+recovery = Avo::Workflows::Recovery::RecoveryManager.new(workflow)
+recovery_point = recovery.create_recovery_point('before_critical_step')
+
+# Rollback on failure
+recovery.rollback_to_recovery_point(recovery_point[:id])
+```
+
+### Debugging Tools
+
+```ruby
+# Enable debug mode
+debugger = Avo::Workflows::Debugging::WorkflowDebugger.new(workflow)
+debugger.enable_debug_mode
+debugger.debug_action(:problematic_action, user: current_user)
+```
+
+## Documentation
+
+- **[Complete Documentation](doc/index.html)** - Comprehensive guides and API reference
+- **[Quick Start Guide](doc/examples/basic_workflow.html)** - Get started in 10 minutes  
+- **[Example Workflows](examples/)** - Production-ready workflow examples
+- **[Performance Guide](doc/performance.html)** - Monitoring and optimization
+- **[Troubleshooting](doc/troubleshooting.html)** - Common issues and solutions
+- **[API Reference](doc/api/)** - Complete method documentation
+
+Generate documentation locally:
+
+```bash
+bundle exec rake docs:generate
+bundle exec rake docs:serve  # Serves at http://localhost:3001
+```
+
+## Configuration
+
+```ruby
+# config/initializers/avo_workflows.rb
+Avo::Workflows.configure do |config|
+  config.user_class = "User"
+  config.enabled = true
+  config.default_assignee = :creator
+  config.performance_monitoring = true
+  config.debug_mode = Rails.env.development?
+end
+```
+
+## Requirements
+
+- **Ruby** 3.0+
+- **Rails** 7.0+  
+- **Avo** 3.0+ (for Avo integration features)
 
 ## Development
 
-After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake spec` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
-
-To install this gem onto your local machine, run `bundle exec rake install`. To release a new version, update the version number in `version.rb`, and then run `bundle exec rake release`, which will create a git tag for the version, push git commits and the created tag, and push the `.gem` file to [rubygems.org](https://rubygems.org).
+```bash
+git clone https://github.com/avo-hq/avo-workflows.git
+cd avo-workflows
+bundle install
+bundle exec rspec
+```
 
 ## Contributing
 
-Bug reports and pull requests are welcome on GitHub at https://github.com/[USERNAME]/avo-workflows.
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Write tests for your changes
+4. Ensure all tests pass (`bundle exec rspec`)
+5. Commit your changes (`git commit -am 'Add amazing feature'`)
+6. Push to the branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
+
+## License
+
+This gem is available as open source under the terms of the [MIT License](LICENSE.txt).
+
+## Support
+
+- **Documentation**: [Full documentation site](doc/index.html)
+- **Examples**: See the [`examples/`](examples/) directory
+- **Issues**: [GitHub Issues](https://github.com/avo-hq/avo-workflows/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/avo-hq/avo-workflows/discussions)

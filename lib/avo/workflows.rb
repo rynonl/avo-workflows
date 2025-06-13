@@ -9,6 +9,7 @@ require_relative "workflows/debugging"
 require_relative "workflows/recovery"
 require_relative "workflows/performance"
 require_relative "workflows/performance/optimizations"
+require_relative "workflows/documentation"
 require_relative "workflows/base"
 require_relative "workflows/models/workflow_execution"
 require_relative "workflows/engine" if defined?(Rails)
