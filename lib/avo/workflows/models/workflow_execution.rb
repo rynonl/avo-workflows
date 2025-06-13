@@ -114,6 +114,18 @@ module Avo
         step_history || []
       end
 
+      # Helper method for tests - updates context data
+      # 
+      # @param new_context [Hash] new context data to merge  
+      def update_context!(new_context)
+        return unless new_context.is_a?(Hash)
+        
+        current_context = context_data || {}
+        merged_context = current_context.merge(new_context)
+        
+        update!(context_data: merged_context)
+      end
+
       private
 
       def set_defaults
