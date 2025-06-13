@@ -1,0 +1,34 @@
+# frozen_string_literal: true
+
+# Example workflow demonstrating basic workflow functionality
+class ExampleWorkflow < Avo::Workflows::Base
+  # Define workflow steps and their allowed transitions
+  step :draft do
+    action :submit_for_review, to: :pending_review
+    action :save_draft, to: :draft
+  end
+  
+  step :pending_review do
+    action :approve, to: :approved
+    action :reject, to: :rejected
+    action :request_changes, to: :draft
+  end
+  
+  step :approved do
+    # Terminal state - no further actions
+  end
+  
+  step :rejected do
+    action :resubmit, to: :draft
+  end
+
+  # Optional: Define step conditions
+  # step :pending_review do
+  #   condition { context[:user]&.can_review? }
+  # end
+
+  # Optional: Define step callbacks
+  # before_transition to: :approved do |execution|
+  #   # Send notification, update records, etc.
+  # end
+end

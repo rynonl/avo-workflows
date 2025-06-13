@@ -1,0 +1,24 @@
+# frozen_string_literal: true
+
+class <%= workflow_class_name %> < Avo::Workflows::Base
+<% workflow_steps.each_with_index do |step, index| %>
+  step :<%= step %> do
+<% if index < workflow_steps.length - 1 %>
+    action :<%= "proceed_to_#{workflow_steps[index + 1]}" %>, to: :<%= workflow_steps[index + 1] %>
+<% end %>
+<% if index > 0 %>
+    action :<%= "back_to_#{workflow_steps[index - 1]}" %>, to: :<%= workflow_steps[index - 1] %>
+<% end %>
+  end
+  
+<% end %>
+  # Optional: Define step conditions
+  # step :pending_review do
+  #   condition { context[:user]&.can_review? }
+  # end
+
+  # Optional: Define step callbacks
+  # before_transition to: :approved do |execution|
+  #   # Send notification, update records, etc.
+  # end
+end

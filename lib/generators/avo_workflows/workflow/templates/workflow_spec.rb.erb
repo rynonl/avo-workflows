@@ -1,0 +1,36 @@
+# frozen_string_literal: true
+
+require 'rails_helper'
+
+RSpec.describe <%= workflow_class_name %> do
+  let(:workflowable) { create(:post) } # Adjust to your model
+  let(:workflow_execution) { create(:workflow_execution, workflow_class: '<%= workflow_class_name %>', workflowable: workflowable) }
+  
+  describe 'workflow steps' do
+<% workflow_steps.each do |step| %>
+    it 'defines :<%= step %> step' do
+      expect(described_class.step_names).to include(:<%= step %>)
+    end
+<% end %>
+  end
+
+  describe 'step transitions' do
+<% workflow_steps.each_with_index do |step, index| %>
+    context 'from :<%= step %>' do
+      before { workflow_execution.update(current_step: '<%= step %>') }
+      
+<% if index < workflow_steps.length - 1 %>
+      it 'can transition to :<%= workflow_steps[index + 1] %>' do
+        expect(workflow_execution.can_transition_to?(:<%= workflow_steps[index + 1] %>)).to be true
+      end
+<% end %>
+<% if index > 0 %>
+      
+      it 'can transition back to :<%= workflow_steps[index - 1] %>' do
+        expect(workflow_execution.can_transition_to?(:<%= workflow_steps[index - 1] %>)).to be true
+      end
+<% end %>
+    end
+<% end %>
+  end
+end

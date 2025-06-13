@@ -1,0 +1,24 @@
+# frozen_string_literal: true
+
+class CreateAvoWorkflowExecutions < ActiveRecord::Migration<%= migration_version %>
+  def change
+    create_table :avo_workflow_executions do |t|
+      t.string :workflow_class, null: false
+      t.references :workflowable, polymorphic: true, null: false
+      t.string :current_step, null: false
+      t.json :context_data
+      t.json :step_history
+      t.string :status, default: 'active'
+      t.references :assigned_to, polymorphic: true, null: true
+      t.timestamps
+    end
+
+    add_index :avo_workflow_executions, [:workflowable_type, :workflowable_id], 
+              name: 'index_workflow_executions_on_workflowable'
+    add_index :avo_workflow_executions, [:assigned_to_type, :assigned_to_id],
+              name: 'index_workflow_executions_on_assigned_to'
+    add_index :avo_workflow_executions, :workflow_class
+    add_index :avo_workflow_executions, :current_step
+    add_index :avo_workflow_executions, :status
+  end
+end
