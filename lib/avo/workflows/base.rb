@@ -35,6 +35,8 @@ module Avo
     #     end
     #   end
     class Base
+      include Avo::Workflows::Forms::WorkflowFormMethods if defined?(Avo::Workflows::Forms::WorkflowFormMethods)
+      
       class << self
         # Returns the defined workflow steps
         # @return [Hash<Symbol, StepDefinition>] hash of step definitions

@@ -75,6 +75,9 @@ Complete guide to the 5 production-ready example workflows included.
 ### [Avo Integration Guide](avo_integration.html)
 Comprehensive guide to integrating workflows with Avo admin interface.
 
+### [Workflow Forms Guide](workflow_forms.html)
+Complete guide to creating rich data collection forms for workflow actions.
+
 ### [Performance Guide](performance.html)
 Monitoring, benchmarking, and optimization documentation.
 

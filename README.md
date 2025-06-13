@@ -10,6 +10,7 @@ A powerful workflow engine that integrates seamlessly with Avo admin interface a
 - 🚀 **Declarative Workflow Definition** - Define workflows using an intuitive Ruby DSL
 - 🔄 **State Management** - Robust step-based state transitions with validation
 - 🎛️ **Avo Integration** - Native integration with Avo admin interface (fields, panels, actions)
+- 📝 **Rich Data Collection Forms** - Built-in form system for collecting workflow action data
 - 👥 **Multi-User Support** - Assign workflows to users and track assignments
 - 📊 **Performance Monitoring** - Built-in performance tracking and optimization
 - 🔍 **Debugging Tools** - Comprehensive debugging and recovery mechanisms
@@ -88,16 +89,29 @@ workflow.current_step
 # => "approved"
 ```
 
-**4. Avo Integration**
+**4. Avo Integration with Forms**
 
 ```ruby
-# app/avo/resources/document_resource.rb
+# Create workflow action forms for rich data collection
+class ApprovalForm < Avo::Workflows::Forms::Base
+  field :approval_comments, as: :textarea, required: true
+  field :notify_stakeholders, as: :boolean, default: true
+  field :priority_level, as: :select, options: ['low', 'medium', 'high']
+end
+
+# Register forms with workflow actions
+class DocumentApprovalWorkflow < Avo::Workflows::Base
+  action_form :approve, ApprovalForm
+  # ... workflow definition
+end
+
+# Add to your Avo resource
 class DocumentResource < Avo::BaseResource
   include Avo::Workflows::ResourceMethods
   
   field :title, as: :text
   field :workflow_status, as: :workflow_progress
-  field :workflow_actions, as: :workflow_actions
+  field :workflow_actions, as: :workflow_actions  # Automatically shows forms
   
   panel :workflow_details, as: :workflow_step_panel
   panel :workflow_history, as: :workflow_history_panel
@@ -176,6 +190,7 @@ debugger.debug_action(:problematic_action, user: current_user)
 - **[Quick Start Guide](doc/examples/basic_workflow.md)** - Get started in 10 minutes  
 - **[Example Workflows Guide](doc/examples/example_workflows.md)** - Production-ready workflow examples
 - **[Avo Integration Guide](doc/avo_integration.md)** - Complete Avo admin integration
+- **[Workflow Forms Guide](doc/workflow_forms.md)** - Rich data collection forms for actions
 - **[Performance Guide](doc/performance.md)** - Monitoring and optimization
 - **[Troubleshooting](doc/troubleshooting.md)** - Common issues and solutions
 - **[API Reference](doc/api/)** - Complete method documentation
