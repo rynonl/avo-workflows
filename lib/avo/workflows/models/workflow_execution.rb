@@ -59,6 +59,9 @@ module Avo
       end
 
       def perform_action(action_name, user: nil, additional_context: {})
+        # Create checkpoint before action
+        checkpoint_id = create_recovery_checkpoint("Before #{action_name}")
+
         # Validate the transition before attempting
         validation_errors = Validators.validate_transition(self, action_name)
         if validation_errors.any?
@@ -72,6 +75,17 @@ module Avo
         # Find the target step for this action
         step_def = workflow_definition.class.find_step(current_step.to_sym)
         action_config = step_def.actions[action_name.to_sym]
+        
+        unless action_config
+          error = InvalidActionError.new(
+            "Action '#{action_name}' not available in step '#{current_step}'",
+            workflow_execution: self,
+            details: { action: action_name, current_step: current_step }
+          )
+          handle_workflow_error(error)
+          return false
+        end
+
         target_step = action_config[:to].to_s
 
         begin
@@ -88,17 +102,34 @@ module Avo
           # Check if workflow is complete
           update!(status: 'completed') if workflow_definition.final_step?(target_step.to_sym)
 
+          # Log successful transition
+          log_workflow_event(:transition_success, action_name, old_step, target_step)
+
           true
         rescue ActiveRecord::RecordInvalid => e
-          # Handle validation errors
-          update_column(:status, 'failed')
-          errors.add(:base, "Transition failed: #{e.message}")
+          # Handle validation errors with recovery info
+          error = WorkflowExecutionError.new(
+            "Transition validation failed: #{e.message}",
+            workflow_execution: self,
+            context: { action: action_name, from: old_step, to: target_step },
+            details: { checkpoint_id: checkpoint_id }
+          )
+          handle_workflow_error(error)
           false
         rescue => e
-          # Handle other errors
-          update_column(:status, 'failed')
-          errors.add(:base, "Transition failed: #{e.message}")
-          raise e
+          # Handle other errors with full context
+          error = WorkflowExecutionError.new(
+            "Transition failed: #{e.message}",
+            workflow_execution: self,
+            context: { action: action_name, from: old_step, to: target_step },
+            details: { 
+              checkpoint_id: checkpoint_id,
+              original_error: e.class.name,
+              backtrace: e.backtrace&.first(5)
+            }
+          )
+          handle_workflow_error(error)
+          raise error
         end
       end
 
@@ -124,6 +155,107 @@ module Avo
         merged_context = current_context.merge(new_context)
         
         update!(context_data: merged_context)
+      end
+
+      # Error handling and recovery methods
+
+      # Handle workflow errors with comprehensive logging
+      def handle_workflow_error(error)
+        update_column(:status, 'failed')
+        
+        # Log the error
+        log_workflow_event(:error, error.class.name, error.message, error.to_h)
+        
+        # Add to ActiveRecord errors
+        errors.add(:base, error.message)
+        
+        # Store error details in context for debugging
+        error_context = {
+          '_last_error' => {
+            timestamp: Time.current.iso8601,
+            error_class: error.class.name,
+            message: error.message,
+            details: error.details,
+            context: error.context
+          }
+        }
+        
+        begin
+          update_context!(error_context)
+        rescue
+          # If we can't update context, at least log it
+          log_workflow_event(:error_context_update_failed, error.to_h)
+        end
+      end
+
+      # Create a recovery checkpoint
+      def create_recovery_checkpoint(label = nil)
+        begin
+          Recovery::WorkflowRecovery.new(self).create_checkpoint(label)
+        rescue => e
+          log_workflow_event(:checkpoint_creation_failed, e.message)
+          nil
+        end
+      end
+
+      # Get debug information for this execution
+      def debug_info
+        Debugging::WorkflowDebugger.new(self).debug_report
+      end
+
+      # Validate workflow integrity
+      def validate_integrity
+        Recovery::WorkflowRecovery.new(self).validate_integrity
+      end
+
+      # Attempt automatic recovery
+      def recover!(strategy: :auto, **options)
+        Recovery::WorkflowRecovery.new(self).recover!(strategy: strategy, **options)
+      end
+
+      # Get execution trace for debugging
+      def execution_trace
+        Debugging::WorkflowDebugger.new(self).execution_trace
+      end
+
+      # Suggest next possible actions
+      def suggest_next_actions
+        Debugging::WorkflowDebugger.new(self).suggest_next_actions
+      end
+
+      # Simulate action outcome without executing
+      def simulate_action(action_name, test_context: {})
+        Debugging::WorkflowDebugger.new(self).simulate_action(action_name, test_context: test_context)
+      end
+
+      # Export comprehensive diagnostics
+      def export_diagnostics(format: :json)
+        Recovery::WorkflowRecovery.new(self).export_diagnostics(format: format)
+      end
+
+      # Check if execution can be recovered
+      def recoverable?
+        Recovery::WorkflowRecovery.new(self).can_recover?
+      end
+
+      # List recovery blockers
+      def recovery_blockers
+        Recovery::WorkflowRecovery.new(self).recovery_blockers
+      end
+
+      # Generate recovery plan
+      def recovery_plan
+        Recovery::WorkflowRecovery.new(self).recovery_plan
+      end
+
+      # List available checkpoints
+      def list_checkpoints
+        Recovery::WorkflowRecovery.new(self).list_checkpoints
+      end
+
+      # Restore from checkpoint
+      def restore_from_checkpoint!(checkpoint_id, force: false)
+        Recovery::WorkflowRecovery.new(self).restore_from_checkpoint!(checkpoint_id, force: force)
       end
 
       private
@@ -168,6 +300,32 @@ module Avo
         rescue NameError
           errors.add(:workflow_class, "not found")
         end
+      end
+
+      def log_workflow_event(event_type, *args)
+        return unless Rails.logger
+
+        message = case event_type
+        when :transition_success
+          action, from_step, to_step = args
+          "Workflow transition: #{action} (#{from_step} -> #{to_step})"
+        when :error
+          error_class, error_message, details = args
+          "Workflow error: #{error_class} - #{error_message}"
+        when :checkpoint_creation_failed
+          error_message = args.first
+          "Checkpoint creation failed: #{error_message}"
+        when :error_context_update_failed
+          details = args.first
+          "Error context update failed: #{details}"
+        else
+          "Workflow event: #{event_type} - #{args.join(', ')}"
+        end
+
+        Rails.logger.info "[WorkflowExecution:#{id}] #{message}"
+      rescue => e
+        # Fail silently if logging fails
+        nil
       end
     end
   end
