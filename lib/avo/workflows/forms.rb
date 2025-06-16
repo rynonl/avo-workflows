@@ -233,3 +233,6 @@ module Avo
     end
   end
 end
+
+# Load auto-generated form functionality
+require_relative 'forms/auto_generated_form'
