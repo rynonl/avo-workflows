@@ -228,6 +228,113 @@ module Avo
         self.class.final_steps.include?(step_name.to_sym)
       end
 
+      # Performs a workflow action (used within on_submit blocks)
+      #
+      # This method allows on_submit handlers to trigger workflow transitions
+      # after processing form data and executing business logic.
+      #
+      # @param action_name [Symbol, String] the action name to perform
+      # @param user [Object] the user performing the action
+      # @param additional_context [Hash] additional context data to merge
+      # @return [Boolean] true if action was performed successfully
+      # @raise [Error] if no execution is available or action fails
+      # @example
+      #   on_submit do |fields, user|
+      #     Document.update!(comments: fields[:comments])
+      #     perform_action(:approve, user: user)
+      #   end
+      def perform_action(action_name, user:, additional_context: {})
+        unless @execution
+          raise Error, "Cannot perform action: no workflow execution available"
+        end
+
+        @execution.perform_action(
+          action_name, 
+          user: user, 
+          additional_context: additional_context
+        )
+      end
+
+      # Access to current execution context (used within on_submit blocks)
+      #
+      # @return [Hash] current workflow execution context data
+      # @example
+      #   on_submit do |fields, user|
+      #     current_priority = context[:priority]
+      #     perform_action(:escalate, user: user) if current_priority == 'high'
+      #   end
+      def context
+        @execution&.context_data || {}
+      end
+
+      # Updates workflow context data (used within on_submit blocks)
+      #
+      # @param new_data [Hash] data to merge into context
+      # @return [Hash] updated context data
+      # @example
+      #   on_submit do |fields, user|
+      #     update_context(
+      #       review_comments: fields[:comments],
+      #       reviewed_by: user.id,
+      #       reviewed_at: Time.current
+      #     )
+      #     perform_action(:approve, user: user)
+      #   end
+      def update_context(new_data)
+        if @execution
+          @execution.update_context!(new_data)
+        else
+          raise Error, "Cannot update context: no workflow execution available"
+        end
+      end
+
+      # Access to the workflowable object (used within on_submit blocks)
+      #
+      # @return [Object] the object this workflow is operating on
+      # @example
+      #   on_submit do |fields, user|
+      #     workflowable.update!(status: fields[:status])
+      #     perform_action(:complete, user: user)
+      #   end
+      def workflowable
+        @execution&.workflowable
+      end
+
+      # Panel builder helper class
+      #
+      # Used within panel blocks to define form fields for step input
+      class PanelBuilder
+        # Field definitions
+        # @return [Array<Hash>] array of field definitions
+        attr_reader :fields
+
+        # Initializes a panel builder
+        def initialize
+          @fields = []
+        end
+
+        # Defines a form field for the step panel
+        #
+        # @param name [Symbol, String] the field name
+        # @param as [Symbol] the field type (:text, :textarea, :boolean, :select, etc.)
+        # @param options [Hash] additional field options (required, label, help, etc.)
+        # @return [Hash] the field definition
+        # @example
+        #   field :comments, as: :textarea, required: true, label: "Comments"
+        #   field :priority, as: :select, options: ['low', 'medium', 'high']
+        #   field :notify, as: :boolean, default: true
+        def field(name, as:, **options)
+          field_definition = {
+            name: name.to_sym,
+            type: as.to_sym,
+            options: options
+          }
+          
+          @fields << field_definition
+          field_definition
+        end
+      end
+
       # Step definition helper class
       #
       # Used within step blocks to define actions, conditions, and metadata
@@ -251,6 +358,14 @@ module Avo
         # Step requirements
         # @return [Array<String>] array of requirement descriptions
         attr_reader :requirements
+        
+        # Panel fields
+        # @return [Array<Hash>] array of field definitions for the step form panel
+        attr_reader :panel_fields
+        
+        # On submit handler
+        # @return [Proc, nil] block to execute when step form is submitted
+        attr_reader :on_submit_handler
 
         # Initializes a step definition
         #
@@ -261,6 +376,8 @@ module Avo
           @conditions = []
           @requirements = []
           @description = nil
+          @panel_fields = []
+          @on_submit_handler = nil
         end
 
         # Sets the step description when called from step block
@@ -326,6 +443,57 @@ module Avo
         def confirmation_required?(action_name)
           action_config = @actions[action_name.to_sym]
           action_config&.dig(:confirmation_required) || false
+        end
+
+        # Defines the form panel for this step with fields for user input
+        #
+        # @yield panel block containing field definitions
+        # @return [Array<Hash>] the panel field definitions
+        # @example
+        #   panel do
+        #     field :comments, as: :textarea, required: true
+        #     field :priority, as: :select, options: ['low', 'medium', 'high']
+        #   end
+        def panel(&block)
+          return @panel_fields unless block_given?
+          
+          panel_builder = PanelBuilder.new
+          panel_builder.instance_eval(&block)
+          @panel_fields = panel_builder.fields
+        end
+
+        # Defines the handler for form submission
+        #
+        # The block receives form field data and current user, and should contain
+        # the business logic to process the form submission and determine the next step.
+        #
+        # @yield on_submit block that receives (fields, user)
+        # @yieldparam fields [Hash] form field data submitted by user
+        # @yieldparam user [Object] current user performing the action
+        # @return [Proc] the on_submit handler
+        # @example
+        #   on_submit do |fields, user|
+        #     Document.update!(comments: fields[:comments])
+        #     perform_action(:approve, user: user) if fields[:approved]
+        #   end
+        def on_submit(&block)
+          return @on_submit_handler unless block_given?
+          
+          @on_submit_handler = block
+        end
+
+        # Checks if this step has a form panel
+        #
+        # @return [Boolean] true if step has panel fields defined
+        def has_panel?
+          @panel_fields.any?
+        end
+
+        # Checks if this step has an on_submit handler
+        #
+        # @return [Boolean] true if step has on_submit handler defined
+        def has_on_submit_handler?
+          @on_submit_handler.present?
         end
       end
     end

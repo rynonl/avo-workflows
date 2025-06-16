@@ -343,4 +343,259 @@ RSpec.describe Avo::Workflows::Base do
       expect(review_step.confirmation_required?(:reject)).to be false
     end
   end
+
+  describe 'PanelBuilder' do
+    let(:panel_builder) { Avo::Workflows::Base::PanelBuilder.new }
+
+    describe '#field' do
+      it 'adds field definitions' do
+        panel_builder.field :name, as: :text, required: true
+        panel_builder.field :priority, as: :select, options: ['low', 'high']
+        
+        expect(panel_builder.fields.length).to eq(2)
+        expect(panel_builder.fields.first).to eq({
+          name: :name,
+          type: :text,
+          options: { required: true }
+        })
+        expect(panel_builder.fields.second).to eq({
+          name: :priority,
+          type: :select,
+          options: { options: ['low', 'high'] }
+        })
+      end
+
+      it 'converts field names to symbols' do
+        panel_builder.field 'email', as: :text
+        expect(panel_builder.fields.first[:name]).to eq(:email)
+      end
+
+      it 'converts field types to symbols' do
+        panel_builder.field :comments, as: 'textarea'
+        expect(panel_builder.fields.first[:type]).to eq(:textarea)
+      end
+    end
+  end
+
+  describe 'StepDefinition with panels and on_submit' do
+    let(:step_def) { Avo::Workflows::Base::StepDefinition.new(:test_step) }
+
+    describe '#panel' do
+      it 'defines panel fields using block' do
+        step_def.panel do
+          field :comments, as: :textarea, required: true
+          field :priority, as: :select, options: ['low', 'medium', 'high']
+          field :notify, as: :boolean, default: true
+        end
+
+        expect(step_def.panel_fields.length).to eq(3)
+        expect(step_def.panel_fields[0]).to eq({
+          name: :comments,
+          type: :textarea,
+          options: { required: true }
+        })
+        expect(step_def.panel_fields[1]).to eq({
+          name: :priority,
+          type: :select,
+          options: { options: ['low', 'medium', 'high'] }
+        })
+        expect(step_def.panel_fields[2]).to eq({
+          name: :notify,
+          type: :boolean,
+          options: { default: true }
+        })
+      end
+
+      it 'returns panel fields when called without block' do
+        step_def.instance_variable_set(:@panel_fields, [{ name: :test, type: :text, options: {} }])
+        expect(step_def.panel).to eq([{ name: :test, type: :text, options: {} }])
+      end
+    end
+
+    describe '#on_submit' do
+      it 'stores the on_submit handler' do
+        handler = proc { |fields, user| "processed" }
+        step_def.on_submit(&handler)
+        expect(step_def.on_submit_handler).to eq(handler)
+      end
+
+      it 'returns the handler when called without block' do
+        handler = proc { |fields, user| "processed" }
+        step_def.instance_variable_set(:@on_submit_handler, handler)
+        expect(step_def.on_submit).to eq(handler)
+      end
+    end
+
+    describe '#has_panel?' do
+      it 'returns true when panel fields are defined' do
+        step_def.panel do
+          field :test, as: :text
+        end
+        expect(step_def.has_panel?).to be true
+      end
+
+      it 'returns false when no panel fields are defined' do
+        expect(step_def.has_panel?).to be false
+      end
+    end
+
+    describe '#has_on_submit_handler?' do
+      it 'returns true when on_submit handler is defined' do
+        step_def.on_submit { |fields, user| }
+        expect(step_def.has_on_submit_handler?).to be true
+      end
+
+      it 'returns false when no on_submit handler is defined' do
+        expect(step_def.has_on_submit_handler?).to be false
+      end
+    end
+  end
+
+  describe 'integrated step workflow with panels and form submission' do
+    let(:integrated_workflow_class) do
+      Class.new(described_class) do
+        step :draft do
+          describe 'Document is being drafted'
+          action :submit_for_review, to: :review
+          
+          panel do
+            field :title, as: :text, required: true
+            field :content, as: :textarea, required: true
+            field :category, as: :select, options: ['news', 'blog', 'announcement']
+            field :urgent, as: :boolean, default: false
+          end
+
+          on_submit do |fields, user|
+            # Update workflowable with form data
+            workflowable.update!(
+              title: fields[:title],
+              content: fields[:content],
+              category: fields[:category]
+            )
+
+            # Update workflow context
+            update_context(
+              submitted_by: user.id,
+              submitted_at: Time.current,
+              urgent: fields[:urgent]
+            )
+
+            # Perform the transition
+            perform_action(:submit_for_review, user: user)
+          end
+        end
+
+        step :review do
+          describe 'Document under review'
+          action :approve, to: :approved
+          action :reject, to: :rejected
+
+          panel do
+            field :reviewer_comments, as: :textarea, required: true
+            field :quality_score, as: :number, min: 1, max: 10
+          end
+
+          on_submit do |fields, user|
+            update_context(
+              reviewed_by: user.id,
+              reviewer_comments: fields[:reviewer_comments],
+              quality_score: fields[:quality_score]
+            )
+
+            if fields[:quality_score] >= 7
+              perform_action(:approve, user: user)
+            else
+              perform_action(:reject, user: user)
+            end
+          end
+        end
+
+        step :approved
+        step :rejected
+      end
+    end
+
+    it 'defines steps with panels' do
+      draft_step = integrated_workflow_class.find_step(:draft)
+      expect(draft_step.has_panel?).to be true
+      expect(draft_step.panel_fields.length).to eq(4)
+      expect(draft_step.panel_fields.map { |f| f[:name] }).to eq([:title, :content, :category, :urgent])
+    end
+
+    it 'defines steps with on_submit handlers' do
+      draft_step = integrated_workflow_class.find_step(:draft)
+      expect(draft_step.has_on_submit_handler?).to be true
+      expect(draft_step.on_submit_handler).to be_a(Proc)
+    end
+
+    it 'allows steps without panels or handlers' do
+      approved_step = integrated_workflow_class.find_step(:approved)
+      expect(approved_step.has_panel?).to be false
+      expect(approved_step.has_on_submit_handler?).to be false
+    end
+  end
+
+  describe 'workflow instance methods for on_submit' do
+    let(:workflowable) { double('workflowable') }
+    let(:execution) { double('execution', context_data: { initial: true }, workflowable: workflowable) }
+    let(:workflow_instance) { test_workflow_class.new(execution) }
+    let(:user) { double('user', id: 1) }
+
+    describe '#perform_action' do
+      it 'calls perform_action on execution with correct parameters' do
+        expect(execution).to receive(:perform_action).with(
+          :submit,
+          user: user,
+          additional_context: { notes: 'test' }
+        )
+
+        workflow_instance.perform_action(:submit, user: user, additional_context: { notes: 'test' })
+      end
+
+      it 'raises error when no execution is available' do
+        instance_without_execution = test_workflow_class.new(nil)
+        expect {
+          instance_without_execution.perform_action(:submit, user: user)
+        }.to raise_error(Avo::Workflows::Error, /no workflow execution available/)
+      end
+    end
+
+    describe '#context' do
+      it 'returns execution context data' do
+        expect(workflow_instance.context).to eq({ initial: true })
+      end
+
+      it 'returns empty hash when no execution' do
+        instance_without_execution = test_workflow_class.new(nil)
+        expect(instance_without_execution.context).to eq({})
+      end
+    end
+
+    describe '#update_context' do
+      it 'calls update_context! on execution' do
+        new_data = { updated: true }
+        expect(execution).to receive(:update_context!).with(new_data)
+        
+        workflow_instance.update_context(new_data)
+      end
+
+      it 'raises error when no execution is available' do
+        instance_without_execution = test_workflow_class.new(nil)
+        expect {
+          instance_without_execution.update_context({ test: true })
+        }.to raise_error(Avo::Workflows::Error, /no workflow execution available/)
+      end
+    end
+
+    describe '#workflowable' do
+      it 'returns the workflowable object from execution' do
+        expect(workflow_instance.workflowable).to eq(workflowable)
+      end
+
+      it 'returns nil when no execution' do
+        instance_without_execution = test_workflow_class.new(nil)
+        expect(instance_without_execution.workflowable).to be_nil
+      end
+    end
+  end
 end
