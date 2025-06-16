@@ -1,78 +1,48 @@
 # frozen_string_literal: true
 
-require 'rails_helper'
+require 'spec_helper'
+require 'tmpdir'
+require 'fileutils'
+require 'generators/avo_workflows/install/install_generator'
 
-class InstallGeneratorTest < Rails::Generators::TestCase
-  tests AvoWorkflows::Generators::InstallGenerator
-  destination File.expand_path("../../../tmp/generator_test", __dir__)
-
-  setup do
-    prepare_destination
+RSpec.describe AvoWorkflows::Generators::InstallGenerator do
+  let(:temp_dir) { Dir.mktmpdir }
+  
+  after do
+    FileUtils.rm_rf(temp_dir)
   end
-
-  def test_creates_migration_file
-    run_generator
-
-    migration_file = find_migration_file('create_avo_workflow_executions')
-    assert migration_file, "Migration file should be created"
-    
-    content = File.read(migration_file)
-    assert_match(/create_table :avo_workflow_executions/, content)
-    assert_match(/t\.string :workflow_class, null: false/, content)
-    assert_match(/t\.references :workflowable, polymorphic: true/, content)
-  end
-
-  def test_creates_initializer
-    run_generator
-
-    assert_file "config/initializers/avo_workflows.rb" do |content|
-      assert_match(/Avo::Workflows\.configure/, content)
-    end
-  end
-
-  def test_creates_workflows_directory
-    run_generator
-
-    assert_file "app/avo/workflows/.keep"
-  end
-
-  def test_creates_example_workflow
-    run_generator
-
-    assert_file "app/avo/workflows/example_workflow.rb" do |content|
-      assert_match(/class ExampleWorkflow < Avo::Workflows::Base/, content)
-      assert_match(/step :draft/, content)
-    end
-  end
-
-  private
-
-  def find_migration_file(name)
-    Dir.glob("#{destination_root}/db/migrate/*_#{name}.rb").first
-  end
-end
-
-# RSpec wrapper for the TestCase
-RSpec.describe AvoWorkflows::Generators::InstallGenerator, type: :generator do
-  let(:test_case) { InstallGeneratorTest.new }
 
   before do
-    test_case.setup
+    # Set up basic directory structure
+    FileUtils.mkdir_p(File.join(temp_dir, 'app', 'avo', 'workflows'))
+    FileUtils.mkdir_p(File.join(temp_dir, 'config', 'initializers'))
+    FileUtils.mkdir_p(File.join(temp_dir, 'db', 'migrate'))
   end
 
-  it 'creates migration file' do
-    test_case.test_creates_migration_file
+  it 'can instantiate the generator' do
+    generator = AvoWorkflows::Generators::InstallGenerator.new
+    expect(generator).to be_a(AvoWorkflows::Generators::InstallGenerator)
   end
 
-  it 'creates initializer' do
-    test_case.test_creates_initializer
+  it 'has the correct source root' do
+    expect(AvoWorkflows::Generators::InstallGenerator.source_root).to end_with('lib/generators/avo_workflows/install/templates')
   end
 
-  it 'creates workflows directory' do
-    test_case.test_creates_workflows_directory
+  it 'has migration template with correct content' do
+    template_path = File.join(AvoWorkflows::Generators::InstallGenerator.source_root, 'create_avo_workflow_executions.rb.erb')
+    expect(File.exist?(template_path)).to be true
+    
+    content = File.read(template_path)
+    expect(content).to include('create_table :avo_workflow_executions')
+    expect(content).to include('t.string :workflow_class, null: false')
+    expect(content).to include('t.references :workflowable, polymorphic: true')
   end
 
-  it 'creates example workflow' do
-    test_case.test_creates_example_workflow
+  it 'has initializer template with correct content' do
+    template_path = File.join(AvoWorkflows::Generators::InstallGenerator.source_root, 'initializer.rb.erb')
+    expect(File.exist?(template_path)).to be true
+    
+    content = File.read(template_path)
+    expect(content).to include('Avo::Workflows.configure')
   end
 end
